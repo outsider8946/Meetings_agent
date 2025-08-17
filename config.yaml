@@ -1,5 +1,5 @@
 llm:
-  model_name: "deepseek/deepseek-chat-v3-0324:free"
+  model_name: "qwen/qwen3-30b-a3b:free"
   local: False
   temperature: 0.6
   top_k: 20

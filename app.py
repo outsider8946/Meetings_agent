@@ -1,17 +1,24 @@
-import os
 import tempfile
 import streamlit as st
 from agent import Agent
 
-def process_media(file_path):
+
+def process_media():
     """Заглушка для обработки аудио/видео (можно заменить на Whisper и т.д.)"""
-    return f"Транскрипт из медиафайла: {os.path.basename(file_path)} (заглушка)"
+    return f"Транскрипт из медиафайла: (заглушка)"
 
-def get_ai_response(user_message, chat_history):
-    """Заглушка для генерации ответа (можно подключить ChatGPT и т.д.)"""
-    return f"AI: Это ответ на '{user_message}'. История: {len(chat_history)} сообщений"
+def rerun():
+    st.session_state.messages = []
+    st.session_state.chat_started = False
+    st.session_state.text_analys = False
+    st.session_state.dialog_input = ''
+    st.session_state.agent = Agent()
+    st.rerun()
 
-agent = Agent()
+def pprint():
+    for item in st.session_state.messages:
+        with st.chat_message(item['role']):
+            st.markdown(item['content'])
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -19,14 +26,11 @@ if 'text_analys' not in st.session_state:
     st.session_state.text_analys = False
 if "chat_started" not in st.session_state:
     st.session_state.chat_started = False
-if "agent_state" not in st.session_state:
-    st.session_state.agent_state = {
-        'messages':[],
-        'is_dialog_valid':False,
-        'accounts': {},
-        'summarize':''
-        
-    }
+if "dialog_input" not in st.session_state:
+    st.session_state.dialog_input = ''
+if "agent" not in st.session_state:
+    st.session_state.agent = Agent()
+
 
 st.title("🎤 Чат с AI (мультимодальный)")
 st.caption("Сначала загрузите аудио/видео или введите текст, затем начнётся диалог")
@@ -39,6 +43,7 @@ if not st.session_state.chat_started:
         text_input = st.text_area("Введите транскрибацию встречи для анализа", height=150)
         if st.button("Начать анализ (текст)", disabled=not text_input.strip()):
             st.session_state.messages.append({"role": "user", "content": text_input})
+            st.session_state.dialog_input = text_input
             st.session_state.text_analys = True
             st.session_state.chat_started = True
             st.rerun()
@@ -60,23 +65,21 @@ if not st.session_state.chat_started:
             st.rerun()
 
 else:
-    with st.chat_message("assistant"):
-        st.markdown('Анализ встречи, подождите...')
-    
-    agent_out = agent.start(st.session_state.messages[0]['content'])
-    
-    with st.chat_message('assistant'):
-        st.markdown(agent_out)
+    if st.session_state.dialog_input != '':
+        st.session_state.messages.append({"role": "assistant", "content": 'Анализ встречи, подождите...'})
+        pprint()
+        agent_out = st.session_state.agent.run(st.session_state.dialog_input)
+        st.session_state.messages.append({"role": "assistant", "content": agent_out})
+        pprint()
+        st.session_state.dialog_input = ''
     
     if user_input := st.chat_input("Ваше сообщение..."):
         st.session_state.messages.append({"role": "user", "content": user_input})
-        
-        with st.chat_message("user"):
-            st.markdown(user_input)
-        
-        #st.session_state.messages.append({"role": "assistant", "content": response})
-    
+        st.session_state.messages.append({"role": "assistant", "content": 'Коррекция отчета по обратной связи...'})
+        pprint()
+        agent_out = st.session_state.agent.run(user_input)
+        st.session_state.messages.append({"role": "assistant", "content": agent_out})
+        pprint()
+            
     if st.button("Новый диалог"):
-        st.session_state.messages = []
-        st.session_state.chat_started = False
-        st.rerun()
+        rerun()

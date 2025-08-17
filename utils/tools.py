@@ -2,7 +2,7 @@ from typing import Dict
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 from utils.jira_api import get_users, create_task
-from utils.llm import get_dialog_checker
+
 
 class CreateTaskInputSchema(BaseModel):
     """Используй эту функцию, если нужно создать задачу из диалога в Jira проетке"""
@@ -25,9 +25,5 @@ def get_users_tool() -> Dict:
 def create_task_tool(summary: str, description: str, assigned_id: str, reporter_id: str) -> Dict:
     return create_task(summary, description, assigned_id, reporter_id)
 
-@tool('check_dialog_tool', args_schema=CheckDialogInputSchema)
-def check_dialog_tool(dialog: str) -> bool:
-    return bool(get_dialog_checker().invoke(dialog))
 
-
-tools = [get_users_tool, create_task_tool, check_dialog_tool]
+tools = [get_users_tool, create_task_tool]
