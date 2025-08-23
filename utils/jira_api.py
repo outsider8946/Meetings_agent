@@ -1,7 +1,7 @@
 import os
 import json
 import requests
-from typing import Dict
+from typing import Dict, List
 from requests.auth import HTTPBasicAuth
 
 def get_users() -> Dict:
@@ -43,3 +43,26 @@ def create_task(summary: str, description: str, assigned_id: str, reporter_id: s
         return {}
     
     return response.json()
+
+
+def get_tasks() -> List[Dict]:
+    params = {
+        'jql': f'project = {os.environ.get("PROJECT_KEY")}',
+        'maxResults': 50,
+        'startAt': 0,
+        'filelds': 'summary, description, assignee, reporter'
+    }
+
+    response = requests.request(
+        "GET",
+        url=f"https://{os.environ.get('DOMAIN')}.atlassian.net/rest/api/2/search",
+        params=params,
+        headers={"Accept": "application/json"},
+        auth=HTTPBasicAuth(os.environ.get('EMAIL'), os.environ.get('JIRA_API_TOKEN'))
+    )
+    
+    if response.status_code != 200:
+        print(response.text)
+        return [{}]
+    
+    return [{'name': item['summary'], 'description': item['description'], 'reporter': item['reporter'], 'assigned': item['assignee']} for item in response.json()['issues']]
