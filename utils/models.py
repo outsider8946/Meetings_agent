@@ -13,7 +13,8 @@ class AgentState(TypedDict):
     summary: Optional[str] # dialog summary 
     feedback: Optional[str] # feedback by agent output
     report: Optional[str] # agent output
-    tasks: Optional[List[Dict[str,str]]] # tasks from jira
+    jira_tasks: Optional[List[Dict[str,str]]] # tasks from jira
+    matched_tasks: Optional[List[Dict[str, str]]] # task matched from jira and dialog
 
 
 class DialogValidator(BaseModel):
