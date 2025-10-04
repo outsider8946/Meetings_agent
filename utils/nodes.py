@@ -5,21 +5,23 @@ from langgraph.prebuilt import ToolNode
 from utils.tools import tools
 from utils.llm import LLMWorker
 from utils.templates import *
-from utils.models import AgentState, DialogValidator, TaskValidator, UserValidator
+from utils.models import AgentState, ClassifyValidator, TaskValidator, UserValidator, MatchTaskValidator
 
 tool_node = ToolNode(tools=tools) 
 _llm = LLMWorker(config)
 
 
-def dialog_validate_node(state: AgentState) -> AgentState:
+def classify_query_node(state: AgentState) -> AgentState:
+    """Node to classify user query"""
+
     logger.info(f'state in node:\n{state}')
     response = _llm(input={'query': state['input']}, 
                     template=SYSTEM_INPUT_VALIDATE_TEMPLATE, 
-                    validator=DialogValidator)
+                    validator=ClassifyValidator)
     logger.info(f'dialog validate result: {response}')
-    state['validate_result'] = response
+    state['classify_result'] = response
 
-    if state['validate_result'] == 'not dialog':
+    if state['classify_result'] == 'not dialog':
         state['feedback'] = state['input']
     else:
         state['dialog'] = state['input']
@@ -27,17 +29,21 @@ def dialog_validate_node(state: AgentState) -> AgentState:
     return state
 
 
-def extract_tasks_node(state: AgentState) -> AgentState:
+def extract_dialog_tasks_node(state: AgentState) -> AgentState:
+    """Node to extract tasks from user dialog"""
+
     response = _llm(input={'query':state['dialog']}, 
                     template=SYSTEM_TASK_TEMPLATE, 
                     validator=TaskValidator)
     logger.info(f'extracted tasks: {response}')
-    state['tasks'] = response
+    state['extracted_tasks'] = response
     
     return state
 
 
 def extract_names_node(state: AgentState) -> AgentState:
+    """Node to extract names of dialog participiants from user dialog"""
+
     state['names'] = list(set([line.split(':')[0] for line in state['dialog'].split('\n')]))
     logger.info(f'extracted names: {state["names"]}')
 
@@ -45,6 +51,8 @@ def extract_names_node(state: AgentState) -> AgentState:
 
 
 def get_accounts_node(state: AgentState) -> AgentState:
+    """Node to get jira accounts"""
+
     try:
         state['accounts'] = jira_api.get_users()
         logger.info(f'accounts: {state["accounts"]}')
@@ -56,6 +64,8 @@ def get_accounts_node(state: AgentState) -> AgentState:
     
 
 def match_users_node(state: AgentState) -> AgentState:
+    """Node to find real users for current jira project"""
+
     response = _llm(input={'names': state['names'], 
                            'accounts':state['accounts']},
                             template=SYSTEM_MATCH_USERS_TEMPLATE, 
@@ -67,6 +77,8 @@ def match_users_node(state: AgentState) -> AgentState:
 
 
 def summary_node(state: AgentState) -> AgentState:
+    """Node to summary user dialog"""
+
     response = _llm(input={'query':state['dialog']}, 
                     template=SYSTEM_SUMMARY_TEMPLATE, 
                     validator=None)
@@ -77,6 +89,8 @@ def summary_node(state: AgentState) -> AgentState:
 
 
 def feedback_node(state: AgentState) -> AgentState:
+    """Node to change report by user feedback"""
+
     response = _llm(input={'dialog':state['dialog'], 
                            'report':state['report'], 
                            'feedback':state['feedback']},
@@ -87,7 +101,9 @@ def feedback_node(state: AgentState) -> AgentState:
 
     return state
 
-def get_tasks_node(state: AgentState) -> AgentState:
+def get_jira_tasks_node(state: AgentState) -> AgentState:
+    """Node to get jira tasks for current project"""
+
     tasks = jira_api.get_tasks()
 
     for i, task in enumerate(tasks):
@@ -99,24 +115,41 @@ def get_tasks_node(state: AgentState) -> AgentState:
 
 
 def match_tasks_node(state: AgentState) -> AgentState:
+   """Node to match new/updated jira tasks with dialog user"""
+
    response = _llm(input={'jira_tasks': state['jira_tasks'],
                           'extracted_tasks': state['extracted_tasks']},
                           template=SYSTEM_MATCH_TASKS_TEMPLATE, 
-                          validator=None)
+                          validator=MatchTaskValidator)
    state['matched_tasks'] = response
 
    return state
 
 
 def update_tasks_node(state: AgentState) -> AgentState:
-    if state['tasks'] is None:
+    """Node to create/update jira tasks"""
+
+    if state['matched_tasks'] is None:
         return state
     
-    for task in state['tasks']:
+    for updated_task in state['matched_tasks']['updated_tasks']:
         try:
-            jira_api.create_task(summary=task['name'], description=task['description'],
-                                assigned=task['assigned'], reporter=task['reporter'])
+            jira_api.update_task(
+                task_id=updated_task['id'], 
+                description=updated_task['description']
+            )
         except Exception as e:
-            logger.error(f'Task {task["name"]} not done with error {e}')
+            logger.error(f"Error to update task {updated_task['id']} -- {updated_task['name']}:\n{e}")
+    
+    for new_task in state['matched_tasks']['new_tasks']:
+        try:
+            jira_api.create_task(
+                summary=new_task['name'],
+                description=new_task['description'],
+                assigned=new_task['assigned'],
+                reporter=new_task['reporter']
+            )
+        except Exception as e:
+            logger.error(f"Error to create new task {new_task['id']} -- {new_task['name']}:\n{e}")
     
     return state

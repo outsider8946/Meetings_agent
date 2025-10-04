@@ -1,10 +1,12 @@
 import os
 import json
 import requests
-from typing import Dict, List, Optional
+from typing import Dict, List
 from requests.auth import HTTPBasicAuth
 
 def get_users() -> Dict:
+    """Get jira users"""
+
     response = requests.request(
         "GET",
         url=f"https://{os.environ.get('DOMAIN')}.atlassian.net/rest/api/2/users/search",
@@ -19,19 +21,23 @@ def get_users() -> Dict:
 
 
 def get_user_id_by_name(name: str) -> str:
-        users_dict = get_users()
-        if 'error' in users_dict.keys():
-            return ''
-        else:
-            users = list(users_dict.keys())
-        
-        for item in users:
-            if item['name'] == name:
-                return item['id']
+    """Get users id by own name """
+
+    users_dict = get_users()
+    if 'error' in users_dict.keys():
         return ''
+    else:
+        users = list(users_dict.keys())
+    
+    for item in users:
+        if item['name'] == name:
+            return item['id']
+    return ''
 
 
-def create_task(users: Optional[List], summary: str, description: str, assigned: str, reporter: str) -> Dict:
+def create_task(summary: str, description: str, assigned: str, reporter: str) -> Dict:
+    """Create jira task"""
+
     assigned_id = get_user_id_by_name(assigned)
     reporter_id = get_user_id_by_name(reporter)    
     payloads = json.dumps({
@@ -59,13 +65,33 @@ def create_task(users: Optional[List], summary: str, description: str, assigned:
     
     return response.json()
 
+def txt2adf(text: str) -> Dict:
+    """Convert text to Atlassian Documen format"""
 
-def update_task(task_id: str, description: str) -> Dict:
+    return {
+        "type": "doc",
+        "version": 1,
+        "content": [
+            {
+                'type': 'paragraph',
+                'content': [
+                    {
+                        'type': 'text',
+                        'text': text
+                    }
+                ]
+            }
+        ]
+    }
+
+def update_task(task_id: str, description: str):
+    """Update jira task"""
+
     data = json.dumps({
         "update":{
             "description": [
                 {
-                    "set": description
+                    "set": txt2adf(description)
                 }
             ]
         }
@@ -73,20 +99,19 @@ def update_task(task_id: str, description: str) -> Dict:
 
     response = requests.request(
         "PUT",
-        url=f"https://{os.environ.get('DOMAIN')}.atlassian.net/rest/api/2/issue/{task_id}",
+        url=f"https://{os.environ.get('DOMAIN')}.atlassian.net/rest/api/3/issue/{task_id}",
         data=data,
-        headers={"Accept": "application/json"},
+        headers={"Accept": "application/json",  "Content-Type": "application/json"},
         auth=HTTPBasicAuth(os.environ.get('EMAIL'), os.environ.get('JIRA_API_TOKEN'))
     )
 
-    if response.status_code != 200:
-        print(response.text)
-        return {}
+    if response.status_code == 204:
+        print('task is updated')
     
-    return response.json()
-
 
 def get_tasks() -> List[Dict]:
+    """Get jira tasks for current project"""
+
     params = {
         'jql': f'project = {os.environ.get("PROJECT_KEY")}',
         'maxResults': 50,
@@ -109,14 +134,11 @@ def get_tasks() -> List[Dict]:
     result = []
     for item in response.json()['issues']:
         result.append({
+            'id': item['key'],
             'name': item['fields']['summary'],
-            'description': item['fields']['description'],
+            'description': item['fields']['description']['content'][0]['content'][0]['text'],
             'reporter': item['fields']['reporter']['displayName'],
             'assigned': item['fields']['assignee']['displayName']
         })
 
-    
     return result
-
-
-update_task(task_id='', description='Олег продолжает изучать аналогичные решения')
